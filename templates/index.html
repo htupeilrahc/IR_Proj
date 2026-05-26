@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Search Engine - IR 可视化</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        code, .mono { font-family: 'JetBrains Mono', monospace; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+        .score-bar { transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); }
+        .tab-active { border-bottom: 3px solid #6366f1; color: #6366f1; font-weight: 600; }
+        .step-line::before { content: ''; position: absolute; left: 15px; top: 32px; bottom: -8px; width: 2px; background: #c7d2fe; }
+        .step-line:last-child::before { display: none; }
+        .highlight { background: #fef08a; padding: 1px 3px; border-radius: 3px; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-50">
+        <div class="max-w-6xl mx-auto px-6 py-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                        <span class="text-3xl">🔍</span> Mini Search Engine
+                    </h1>
+                    <p class="text-sm text-gray-500 mt-1">经典 IR 理论可视化演示 — lnc.ltc · SPIMI · Boolean · Phrase · Spelling</p>
+                </div>
+                <button onclick="showIndexPanel()" class="px-4 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-sm font-medium hover:bg-indigo-100 transition">
+                    📊 查看倒排索引
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="max-w-6xl mx-auto px-6">
+        <div class="flex gap-0 border-b border-gray-200 mt-4">
+            <button onclick="switchTab('boolean')" id="tab-boolean" class="px-5 py-3 text-sm tab-active transition">布尔 AND 查询</button>
+            <button onclick="switchTab('phrase')" id="tab-phrase" class="px-5 py-3 text-sm text-gray-500 hover:text-gray-700 transition">短语查询</button>
+            <button onclick="switchTab('ranked')" id="tab-ranked" class="px-5 py-3 text-sm text-gray-500 hover:text-gray-700 transition">排序检索 (lnc.ltc)</button>
+            <button onclick="switchTab('spell')" id="tab-spell" class="px-5 py-3 text-sm text-gray-500 hover:text-gray-700 transition">拼写纠错</button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="max-w-6xl mx-auto px-6 py-6">
+        <!-- Boolean Search Panel -->
+        <div id="panel-boolean" class="space-y-4">
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-1">布尔 AND 查询</h2>
+                <p class="text-sm text-gray-500 mb-4">双指针合并 · 按 DF 升序优化处理顺序</p>
+                <div class="flex gap-3">
+                    <input id="boolean-input" type="text" placeholder="输入查询词，如: information retrieval"
+                        class="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm"
+                        onkeydown="if(event.key==='Enter') booleanSearch()">
+                    <button onclick="booleanSearch()" class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition">搜索</button>
+                </div>
+                <div class="flex gap-2 mt-3">
+                    <span class="text-xs text-gray-400">试试:</span>
+                    <button onclick="fillAndSearch('boolean', 'information retrieval')" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition">information retrieval</button>
+                    <button onclick="fillAndSearch('boolean', 'search engine documents')" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition">search engine documents</button>
+                    <button onclick="fillAndSearch('boolean', 'the a in')" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition">the a in</button>
+                </div>
+            </div>
+            <div id="boolean-results"></div>
+        </div>
+
+        <!-- Phrase Search Panel -->
+        <div id="panel-phrase" class="space-y-4 hidden">
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-1">短语查询 (Phrase Query)</h2>
+                <p class="text-sm text-gray-500 mb-4">基于位置索引的位置偏移量检查 · 精确词序匹配</p>
+                <div class="flex gap-3">
+                    <input id="phrase-input" type="text" placeholder='输入短语，如: Stanford University'
+                        class="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm"
+                        onkeydown="if(event.key==='Enter') phraseSearch()">
+                    <button onclick="phraseSearch()" class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition">搜索</button>
+                </div>
+                <div class="flex gap-2 mt-3">
+                    <span class="text-xs text-gray-400">试试:</span>
+                    <button onclick="fillAndSearch('phrase', 'Stanford University')" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition">Stanford University</button>
+                    <button onclick="fillAndSearch('phrase', 'information retrieval')" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition">information retrieval</button>
+                    <button onclick="fillAndSearch('phrase', 'retrieval information')" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition">retrieval information (反例)</button>
+                </div>
+            </div>
+            <div id="phrase-results"></div>
+        </div>
+
+        <!-- Ranked Search Panel -->
+        <div id="panel-ranked" class="space-y-4 hidden">
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-1">排序检索 (Ranked Retrieval)</h2>
+                <p class="text-sm text-gray-500 mb-4">lnc.ltc 方案 · DAAT 累加打分 · 余弦相似度 · Min-Heap Top-K</p>
+                <div class="flex gap-3">
+                    <input id="ranked-input" type="text" placeholder="输入自由文本查询，如: arachnocentric ecology spiders"
+                        class="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm"
+                        onkeydown="if(event.key==='Enter') rankedSearch()">
+                    <div class="flex items-center gap-2">
+                        <label class="text-sm text-gray-500">Top-K:</label>
+                        <select id="ranked-k" class="px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                            <option value="3">3</option>
+                            <option value="5" selected>5</option>
+                            <option value="10">10</option>
+                        </select>
+                    </div>
+                    <button onclick="rankedSearch()" class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition">搜索</button>
+                </div>
+                <div class="flex gap-2 mt-3">
+                    <span class="text-xs text-gray-400">试试:</span>
+                    <button onclick="fillAndSearch('ranked', 'arachnocentric ecology spiders')" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition">arachnocentric ecology spiders (罕见词)</button>
+                    <button onclick="fillAndSearch('ranked', 'the a in')" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition">the a in (常见词)</button>
+                    <button onclick="fillAndSearch('ranked', 'search engine information retrieval')" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition">search engine information retrieval</button>
+                </div>
+            </div>
+            <div id="ranked-results"></div>
+        </div>
+
+        <!-- Spell Check Panel -->
+        <div id="panel-spell" class="space-y-4 hidden">
+            <div class="bg-white rounded-xl shadow-sm border p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-1">拼写纠错 (Spelling Correction)</h2>
+                <p class="text-sm text-gray-500 mb-4">Levenshtein 编辑距离 · 非词拼写纠错 · "Did you mean...?"</p>
+                <div class="flex gap-3">
+                    <input id="spell-input" type="text" placeholder="输入可能拼错的词，如: informaton retrival"
+                        class="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm"
+                        onkeydown="if(event.key==='Enter') spellCheck()">
+                    <button onclick="spellCheck()" class="px-6 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition">检查</button>
+                </div>
+                <div class="flex gap-2 mt-3">
+                    <span class="text-xs text-gray-400">试试:</span>
+                    <button onclick="fillAndSearch('spell', 'informaton retrival')" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition">informaton retrival</button>
+                    <button onclick="fillAndSearch('spell', 'arachnocentrc univrsity srch')" class="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200 transition">arachnocentrc univrsity srch</button>
+                </div>
+            </div>
+            <div id="spell-results"></div>
+        </div>
+    </main>
+
+    <!-- Index Modal -->
+    <div id="index-modal" class="fixed inset-0 bg-black/50 z-50 hidden items-center justify-center" onclick="if(event.target===this)closeIndexPanel()">
+        <div class="bg-white rounded-2xl shadow-2xl w-[90vw] max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+            <div class="px-6 py-4 border-b flex justify-between items-center">
+                <div>
+                    <h3 class="text-lg font-semibold">📚 位置倒排索引 (Positional Inverted Index)</h3>
+                    <p class="text-sm text-gray-500" id="index-subtitle"></p>
+                </div>
+                <button onclick="closeIndexPanel()" class="text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+            </div>
+            <div class="px-6 py-4 overflow-y-auto flex-1" id="index-content">
+                <p class="text-gray-400">加载中...</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ==================== Tab Switching ====================
+    let currentTab = 'boolean';
+    function switchTab(tab) {
+        document.getElementById(`panel-${currentTab}`).classList.add('hidden');
+        document.getElementById(`tab-${currentTab}`).classList.remove('tab-active');
+        document.getElementById(`tab-${currentTab}`).classList.add('text-gray-500');
+        currentTab = tab;
+        document.getElementById(`panel-${tab}`).classList.remove('hidden');
+        document.getElementById(`tab-${tab}`).classList.add('tab-active');
+        document.getElementById(`tab-${tab}`).classList.remove('text-gray-500');
+    }
+
+    function fillAndSearch(type, text) {
+        document.getElementById(`${type}-input`).value = text;
+        if (type === 'boolean') booleanSearch();
+        else if (type === 'phrase') phraseSearch();
+        else if (type === 'ranked') rankedSearch();
+        else if (type === 'spell') spellCheck();
+    }
+
+    function highlightTerms(text, terms) {
+        let result = text;
+        terms.forEach(t => {
+            const regex = new RegExp(`\\b(${t})\\b`, 'gi');
+            result = result.replace(regex, '<span class="highlight font-medium">$1</span>');
+        });
+        return result;
+    }
+
+    // ==================== Boolean Search ====================
+    async function booleanSearch() {
+        const q = document.getElementById('boolean-input').value.trim();
+        if (!q) return;
+        const res = await fetch(`/api/boolean_search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (data.error) return;
+
+        let html = '<div class="fade-in space-y-4">';
+
+        // DF 信息卡片
+        html += `<div class="bg-white rounded-xl shadow-sm border p-5">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">📋 查询词 DF (Document Frequency) 信息</h3>
+            <div class="flex flex-wrap gap-3 mb-4">`;
+        data.term_df.forEach(t => {
+            html += `<div class="px-3 py-2 bg-indigo-50 rounded-lg text-sm">
+                <span class="mono font-medium text-indigo-700">${t.term}</span>
+                <span class="text-gray-500 ml-2">DF = ${t.df}</span>
+            </div>`;
+        });
+        html += `</div>
+            <div class="flex items-center gap-2 text-sm text-gray-600">
+                <span class="font-medium">优化后处理顺序 (DF 升序):</span>`;
+        data.optimized_order.forEach((t, i) => {
+            if (i > 0) html += '<span class="text-gray-300">→</span>';
+            html += `<span class="mono px-2 py-0.5 bg-amber-50 text-amber-700 rounded">${t}</span>`;
+        });
+        html += `</div></div>`;
+
+        // 合并步骤
+        html += `<div class="bg-white rounded-xl shadow-sm border p-5">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">🔄 双指针合并过程 (Two-Pointer Merge)</h3>
+            <div class="space-y-3 relative">`;
+        data.merge_steps.forEach(step => {
+            html += `<div class="flex items-start gap-3 step-line relative">
+                <div class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-sm font-bold shrink-0">${step.step}</div>
+                <div>
+                    <p class="text-sm text-gray-700">${step.action}</p>
+                    <p class="text-xs text-gray-400 mt-0.5">中间结果: [${step.result_ids.join(', ')}] (${step.result_count} 篇文档)</p>
+                </div>
+            </div>`;
+        });
+        html += `</div></div>`;
+
+        // 最终结果
+        html += buildResultCards(data.results, data.terms, `AND 查询结果: ${data.results.length} 篇文档`);
+        html += '</div>';
+        document.getElementById('boolean-results').innerHTML = html;
+    }
+
+    // ==================== Phrase Search ====================
+    async function phraseSearch() {
+        const q = document.getElementById('phrase-input').value.trim();
+        if (!q) return;
+        const res = await fetch(`/api/phrase_search?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (data.error) return;
+
+        let html = '<div class="fade-in space-y-4">';
+
+        // 位置信息
+        html += `<div class="bg-white rounded-xl shadow-sm border p-5">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">📍 各词位置信息 (Positional Data)</h3>
+            <div class="space-y-2">`;
+        data.terms.forEach((term, idx) => {
+            const positions = data.term_positions[term] || {};
+            html += `<div class="flex items-start gap-3 text-sm">
+                <span class="mono px-2 py-0.5 bg-violet-50 text-violet-700 rounded shrink-0">${term}<sub class="text-xs">[偏移=${idx}]</sub></span>
+                <div class="flex flex-wrap gap-1">`;
+            for (const [docId, posList] of Object.entries(positions)) {
+                html += `<span class="px-2 py-0.5 bg-gray-100 rounded text-xs">Doc${docId}: [${posList.join(',')}]</span>`;
+            }
+            if (Object.keys(positions).length === 0) html += '<span class="text-gray-400 text-xs">不在词典中</span>';
+            html += `</div></div>`;
+        });
+        html += `</div></div>`;
+
+        // 匹配说明
+        if (data.results.length === 0) {
+            html += `<div class="bg-amber-50 border border-amber-200 rounded-xl p-5 text-sm text-amber-800 fade-in">
+                <p class="font-medium">⚠ 无匹配结果</p>
+                <p class="mt-1">没有找到词序严格为 "${data.terms.join(' ')}" 的文档。短语查询要求各词在文档中的位置构成连续序列。</p>
+            </div>`;
+        }
+
+        html += buildResultCards(data.results, data.terms, `短语匹配: ${data.results.length} 篇文档`);
+        html += '</div>';
+        document.getElementById('phrase-results').innerHTML = html;
+    }
+
+    // ==================== Ranked Search ====================
+    async function rankedSearch() {
+        const q = document.getElementById('ranked-input').value.trim();
+        const k = document.getElementById('ranked-k').value;
+        if (!q) return;
+        const res = await fetch(`/api/ranked_search?q=${encodeURIComponent(q)}&k=${k}`);
+        const data = await res.json();
+        if (data.error) return;
+
+        let html = '<div class="fade-in space-y-4">';
+
+        // 查询向量信息 (ltc)
+        html += `<div class="bg-white rounded-xl shadow-sm border p-5">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">📐 查询向量权重 (ltc 方案)</h3>
+            <p class="text-xs text-gray-400 mb-3">l = 1+log₁₀(tf) · t = log₁₀(N/df) · c = 余弦归一化 · N = ${data.N}</p>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead><tr class="text-left text-gray-500 border-b">
+                        <th class="pb-2 pr-4">Term</th>
+                        <th class="pb-2 pr-4">TF (查询)</th>
+                        <th class="pb-2 pr-4">DF</th>
+                        <th class="pb-2 pr-4">IDF</th>
+                        <th class="pb-2 pr-4">l × t (未归一化)</th>
+                        <th class="pb-2">状态</th>
+                    </tr></thead><tbody>`;
+        data.term_info.forEach(t => {
+            const idfColor = t.idf > 0.5 ? 'text-green-600' : 'text-orange-500';
+            const idfLabel = t.idf > 0.5 ? '罕见词 ↑' : '常见词 ↓';
+            html += `<tr class="border-b border-gray-100">
+                <td class="py-2 pr-4 mono font-medium">${t.term}</td>
+                <td class="py-2 pr-4">${t.tf_in_query}</td>
+                <td class="py-2 pr-4">${t.df}</td>
+                <td class="py-2 pr-4 ${idfColor} font-medium">${t.idf}</td>
+                <td class="py-2 pr-4 mono">${t.ltc_raw}</td>
+                <td class="py-2"><span class="text-xs px-2 py-0.5 rounded ${t.in_vocab ? (t.idf > 0.5 ? 'bg-green-50 text-green-700' : 'bg-orange-50 text-orange-700') : 'bg-red-50 text-red-600'}">${t.in_vocab ? idfLabel : '不在词典'}</span></td>
+            </tr>`;
+        });
+        html += `</tbody></table></div></div>`;
+
+        // 打分结果
+        html += `<div class="bg-white rounded-xl shadow-sm border p-5">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">🏆 Top-${data.k} 检索结果 (余弦相似度)</h3>`;
+        if (data.results.length === 0) {
+            html += '<p class="text-sm text-gray-400">无匹配结果</p>';
+        }
+        data.results.forEach((r, i) => {
+            html += `<div class="mb-4 last:mb-0">
+                <div class="flex items-center gap-3 mb-1">
+                    <span class="text-xs font-bold text-gray-400 w-6">#${i+1}</span>
+                    <span class="text-sm font-medium text-gray-700">Doc ${r.id}</span>
+                    <span class="mono text-xs text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">score = ${r.score}</span>
+                </div>
+                <div class="ml-9 mb-1">
+                    <div class="w-full bg-gray-100 rounded-full h-2.5">
+                        <div class="score-bar bg-indigo-500 h-2.5 rounded-full" style="width: ${r.bar_width}%"></div>
+                    </div>
+                </div>
+                <p class="ml-9 text-sm text-gray-600">${highlightTerms(r.text, data.term_info.map(t=>t.term))}</p>
+            </div>`;
+        });
+        html += `</div></div>`;
+        document.getElementById('ranked-results').innerHTML = html;
+    }
+
+    // ==================== Spell Check ====================
+    async function spellCheck() {
+        const q = document.getElementById('spell-input').value.trim();
+        if (!q) return;
+        const res = await fetch(`/api/spell_check?q=${encodeURIComponent(q)}`);
+        const data = await res.json();
+        if (data.error) return;
+
+        let html = '<div class="fade-in"><div class="bg-white rounded-xl shadow-sm border p-5"><h3 class="text-sm font-semibold text-gray-700 mb-4">✏️ 纠错结果 (Levenshtein 编辑距离)</h3><div class="space-y-3">';
+        data.corrections.forEach(c => {
+            if (c.in_vocab) {
+                html += `<div class="flex items-center gap-3 p-3 bg-green-50 rounded-lg">
+                    <span class="text-green-600 text-lg">✓</span>
+                    <span class="mono font-medium">${c.original}</span>
+                    <span class="text-sm text-green-600">在词典中，无需纠错</span>
+                </div>`;
+            } else {
+                html += `<div class="p-4 bg-amber-50 border border-amber-100 rounded-lg">
+                    <div class="flex items-center gap-3">
+                        <span class="text-amber-500 text-lg">⚠</span>
+                        <span class="mono line-through text-red-400">${c.original}</span>
+                        <span class="text-gray-400">→</span>
+                        <span class="mono font-bold text-indigo-700">${c.suggestion}</span>
+                        <span class="text-xs px-2 py-0.5 bg-white rounded border text-gray-500">编辑距离 = ${c.distance}</span>
+                    </div>
+                    <p class="text-sm text-amber-700 mt-2 ml-8">Did you mean "<strong>${c.suggestion}</strong>"?</p>
+                </div>`;
+            }
+        });
+        html += '</div></div></div>';
+        document.getElementById('spell-results').innerHTML = html;
+    }
+
+    // ==================== Index Panel ====================
+    async function showIndexPanel() {
+        document.getElementById('index-modal').classList.remove('hidden');
+        document.getElementById('index-modal').classList.add('flex');
+        const res = await fetch('/api/index_stats');
+        const data = await res.json();
+
+        document.getElementById('index-subtitle').textContent = `${data.doc_count} 篇文档 · ${data.vocab_size} 个词项 · SPIMI 字母排序`;
+
+        let html = '';
+
+        // 文档列表
+        html += '<h4 class="text-sm font-semibold text-gray-700 mb-2">📄 文档集合</h4><div class="space-y-1 mb-6">';
+        for (const [id, text] of Object.entries(data.documents)) {
+            html += `<div class="flex gap-2 text-sm"><span class="text-gray-400 mono shrink-0 w-12">Doc ${id}</span><span class="text-gray-700">${text}</span></div>`;
+        }
+        html += '</div>';
+
+        // 索引样本
+        html += '<h4 class="text-sm font-semibold text-gray-700 mb-2">🗂 倒排索引 (前 30 个 term)</h4>';
+        html += '<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="text-left border-b text-gray-500"><th class="pb-2 pr-4">Term</th><th class="pb-2 pr-4">DF</th><th class="pb-2">Postings {docID: [positions]}</th></tr></thead><tbody>';
+        for (const [term, info] of Object.entries(data.sample_index)) {
+            let postingsStr = Object.entries(info.postings).map(([d, p]) => `<span class="text-indigo-600">${d}</span>:[${p.join(',')}]`).join('&nbsp;&nbsp;');
+            html += `<tr class="border-b border-gray-50"><td class="py-1.5 pr-4 mono font-medium text-gray-800">${term}</td><td class="py-1.5 pr-4 text-gray-500">${info.df}</td><td class="py-1.5 mono text-xs">${postingsStr}</td></tr>`;
+        }
+        html += '</tbody></table></div>';
+
+        document.getElementById('index-content').innerHTML = html;
+    }
+
+    function closeIndexPanel() {
+        document.getElementById('index-modal').classList.add('hidden');
+        document.getElementById('index-modal').classList.remove('flex');
+    }
+
+    // ==================== Shared Result Cards ====================
+    function buildResultCards(results, terms, title) {
+        if (results.length === 0) return '';
+        let html = `<div class="bg-white rounded-xl shadow-sm border p-5">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">📄 ${title}</h3><div class="space-y-2">`;
+        results.forEach(r => {
+            html += `<div class="p-3 bg-gray-50 rounded-lg flex gap-3 items-start">
+                <span class="text-xs mono text-gray-400 bg-white px-2 py-1 rounded border shrink-0">Doc ${r.id}</span>
+                <p class="text-sm text-gray-700">${highlightTerms(r.text, terms)}</p>
+            </div>`;
+        });
+        html += '</div></div>';
+        return html;
+    }
+    </script>
+</body>
+</html>
